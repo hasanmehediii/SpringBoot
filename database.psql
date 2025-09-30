@@ -1,0 +1,147 @@
+/* In Neon, databases are stored on branches. By default, a project has one branch and one database. You can select the branch and database to use from the drop-down menus above. Try generating sample data and querying it by running the example statements below, or click New Query to clear the editor. */ CREATE TABLE IF NOT EXISTS playing_with_neon(id SERIAL PRIMARY KEY, name TEXT NOT NULL, value REAL); INSERT INTO playing_with_neon(name, value) SELECT LEFT(md5(i::TEXT), 10), random() FROM generate_series(1, 10) s(i); SELECT * FROM playing_with_neon;
+CREATE TABLE users (
+  user_id BIGSERIAL PRIMARY KEY,
+  full_name VARCHAR(100) NOT NULL,
+  email VARCHAR(100) NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  phone VARCHAR(20),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('ADMIN','DONOR','HOSPITAL','USER')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE donors (
+  donor_id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT UNIQUE NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  blood_type VARCHAR(5) NOT NULL,
+  last_donation DATE,
+  available BOOLEAN DEFAULT TRUE,
+  city VARCHAR(100),
+  latitude NUMERIC(10,6),
+  longitude NUMERIC(10,6)
+);
+
+CREATE TABLE blood_banks (
+  bank_id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(100),
+  phone VARCHAR(20),
+  address TEXT,
+  latitude NUMERIC(10,6),
+  longitude NUMERIC(10,6),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE blood_inventory (
+  inventory_id BIGSERIAL PRIMARY KEY,
+  bank_id BIGINT NOT NULL REFERENCES blood_banks(bank_id) ON DELETE CASCADE,
+  blood_type VARCHAR(5) NOT NULL,
+  units INT DEFAULT 0,
+  UNIQUE (bank_id, blood_type)
+);
+
+CREATE TABLE blood_requests (
+  request_id BIGSERIAL PRIMARY KEY,
+  requester_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  blood_type VARCHAR(5) NOT NULL,
+  units_needed INT NOT NULL,
+  location VARCHAR(150),
+  latitude NUMERIC(10,6),
+  longitude NUMERIC(10,6),
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','MATCHED','FULFILLED','CANCELLED')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE donations (
+  donation_id BIGSERIAL PRIMARY KEY,
+  donor_id BIGINT NOT NULL REFERENCES donors(donor_id) ON DELETE CASCADE,
+  request_id BIGINT REFERENCES blood_requests(request_id) ON DELETE SET NULL,
+  date_donated DATE DEFAULT CURRENT_DATE,
+  status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','COMPLETED','CANCELLED'))
+);
+
+CREATE TABLE notifications (
+  notification_id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  message TEXT,
+  type VARCHAR(50),
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE audit_logs (
+  log_id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  action TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+
+INSERT INTO users (full_name, email, password_hash, phone, role, created_at) VALUES
+('John Doe', 'john.doe@example.com', '$2b$10$examplehash1', '+1234567890', 'DONOR', '2025-09-30 10:00:00+00'),
+('Jane Smith', 'jane.smith@example.com', '$2b$10$examplehash2', '+1234567891', 'HOSPITAL', '2025-09-30 10:15:00+00'),
+('Alice Johnson', 'alice.j@example.com', '$2b$10$examplehash3', '+1234567892', 'USER', '2025-09-30 10:30:00+00'),
+('Bob Wilson', 'bob.wilson@example.com', '$2b$10$examplehash4', '+1234567893', 'ADMIN', '2025-09-30 10:45:00+00'),
+('Emma Brown', 'emma.brown@example.com', '$2b$10$examplehash5', '+1234567894', 'DONOR', '2025-09-30 11:00:00+00');
+
+
+INSERT INTO donors (user_id, blood_type, last_donation, available, city, latitude, longitude) VALUES
+(1, 'A+', '2025-08-15', TRUE, 'New York', 40.7128, -74.0060),
+(5, 'O-', '2025-07-20', TRUE, 'Los Angeles', 34.0522, -118.2437),
+(1, 'B+', NULL, TRUE, 'Chicago', 41.8781, -87.6298),
+(5, 'AB+', '2025-09-01', FALSE, 'Houston', 29.7604, -95.3698),
+(1, 'O+', '2025-06-10', TRUE, 'Miami', 25.7617, -80.1918);
+
+INSERT INTO donors (user_id, blood_type, last_donation, available, city, latitude, longitude) VALUES
+(1, 'A+', '2025-07-15', TRUE, 'Dhaka', 23.8103, 90.4125),
+(5, 'O-', '2025-05-10', TRUE, 'Chattogram', 22.3569, 91.7832);
+
+
+INSERT INTO blood_banks (name, email, phone, address, latitude, longitude, created_at) VALUES
+('Dhaka Central Blood Bank', 'dhaka.bank@example.com', '+8801710000001', '45 Green Road, Dhaka', 23.7510, 90.3920, now()),
+('Chattogram City Blood Bank', 'ctg.bank@example.com', '+8801710000002', '78 Agrabad, Chattogram', 22.3380, 91.8060, now()),
+('Sylhet Blood Care', 'sylhet.bank@example.com', '+8801710000003', '12 Zindabazar, Sylhet', 24.8990, 91.8710, now());
+
+
+INSERT INTO blood_inventory (bank_id, blood_type, units) VALUES
+(1, 'A+', 10),
+(1, 'O-', 5),
+(2, 'B+', 8),
+(2, 'O+', 6),
+(3, 'AB+', 4),
+(3, 'A-', 3);
+
+
+INSERT INTO blood_requests (requester_id, blood_type, units_needed, location, latitude, longitude, status, created_at) VALUES
+(3, 'A+', 2, 'Dhaka Medical College, Dhaka', 23.7278, 90.4103, 'PENDING', now()),
+(2, 'O-', 3, 'Chattogram General Hospital', 22.3560, 91.7830, 'MATCHED', now()),
+(3, 'B+', 1, 'Apollo Hospital, Dhaka', 23.8041, 90.4152, 'FULFILLED', now()),
+(2, 'A-', 2, 'Sylhet Central Hospital', 24.8995, 91.8702, 'PENDING', now()),
+(3, 'O+', 2, 'Square Hospital, Dhaka', 23.7496, 90.3932, 'CANCELLED', now());
+
+
+INSERT INTO donations (donor_id, request_id, date_donated, status) VALUES
+(7, 1, '2025-09-20', 'COMPLETED'),
+(7, 2, '2025-09-25', 'SCHEDULED'),
+(8, 3, '2025-08-15', 'COMPLETED'),
+(7, 4, '2025-09-10', 'CANCELLED'),
+(8, 5, '2025-09-01', 'SCHEDULED');
+
+
+select donor_id from donors
+
+INSERT INTO notifications (user_id, message, type, is_read, created_at) VALUES
+(1, 'Your blood donation has been scheduled for Sept 25.', 'DONATION', FALSE, now()),
+(2, 'A donor has been matched for your blood request.', 'REQUEST_UPDATE', TRUE, now()),
+(3, 'Your blood request is being processed.', 'REQUEST', FALSE, now()),
+(4, 'System audit log updated.', 'ADMIN_ALERT', TRUE, now()),
+(5, 'Reminder: Next donation eligibility in 3 months.', 'REMINDER', FALSE, now());
+
+
+INSERT INTO audit_logs (user_id, action, created_at) VALUES
+(4, 'Admin created initial seed data', now()),
+(2, 'Hospital added a new blood request', now()),
+(1, 'Donor completed a blood donation', now()),
+(5, 'Donor updated availability status', now()),
+(3, 'User created a new blood request', now());
+
+
